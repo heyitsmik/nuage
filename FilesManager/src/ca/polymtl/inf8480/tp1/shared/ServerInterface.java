@@ -12,8 +12,8 @@ import ca.polymtl.inf8480.tp1.shared.UnknownFileException;
 
 public interface ServerInterface extends Remote {
 	void create(String name, String login, String password) throws AuthenticationException, FileAlreadyExistsException, RemoteException;
-	
+	String list(String login, String password) throws AuthenticationException, RemoteException;
+	HashMap<String, byte[]> syncLocalDirectory(String login, String password) throws AuthenticationException, RemoteException;
 	byte[] lock(String name, byte[] localChecksum, String login, String password) throws
 					AuthenticationException, UnknownFileException, FileAlreadyLockedException, RemoteException;
-	// HashMap<String, String> list();
 }

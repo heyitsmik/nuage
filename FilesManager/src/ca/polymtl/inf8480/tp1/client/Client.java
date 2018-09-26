@@ -18,6 +18,8 @@ import java.io.FileNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
+import java.util.Map;
+import java.util.HashMap;
 
 import ca.polymtl.inf8480.tp1.shared.AuthenticationException;
 import ca.polymtl.inf8480.tp1.shared.FileAlreadyExistsException;
@@ -67,7 +69,7 @@ public class Client {
 		authenticateUser();
 
 		if (serverStub != null) {
-			this.create("test");
+			this.syncLocalDirectory();
 		}
 	}
 
@@ -163,13 +165,46 @@ public class Client {
 		}
 	}
 
+	private void list() {
+		try {
+			String list = this.serverStub.list(this.login, this.password);
+			System.out.println(list);
+		} catch (RemoteException e) {
+			System.out.println("Erreur: " + e.getMessage());
+		} catch (AuthenticationException e) {
+			System.out.println(e.getMessage());
+		}
+	}
+
+	private void syncLocalDirectory() {
+		try {
+			HashMap<String, byte[]> syncedFiles = this.serverStub.syncLocalDirectory(this.login, this.password);
+			for (Map.Entry<String, byte[]> entry : syncedFiles.entrySet()) {
+				String fileName = entry.getKey();
+				byte[] fileContent = entry.getValue();
+				File file = new File(this.LOCAL_FILE_PATH + fileName);
+				file.delete(); // TODO check if necessary
+				try (FileOutputStream fos = new FileOutputStream(this.LOCAL_FILE_PATH + fileName)) {
+					fos.write(fileContent);
+				}
+			}
+		} catch (RemoteException e) {
+			System.out.println("Erreur: " + e.getMessage());
+		} catch (AuthenticationException e) {
+			System.out.println(e.getMessage());
+		} catch (Exception e) {
+			System.out.println("Erreur: " + e.getMessage());
+		}
+	}
+
 	private void get(String fileName) {
 		
 	}
 
 	private void lock(String name) {
 		try {
-			byte[] localChecksum = this.getChecksum(name);
+            // If the file does not exists, checksum = null
+			byte[] localChecksum = new File(this.LOCAL_FILE_PATH + name).exists() ? this.getChecksum(name) : null;
 			byte[] upToDateFile = this.serverStub.lock(name, localChecksum, this.login, this.password);
 
 			// Update the user's newly locked file with its most recent version

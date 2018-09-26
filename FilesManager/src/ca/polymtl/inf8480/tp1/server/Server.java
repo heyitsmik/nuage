@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.security.DigestInputStream;
 import java.util.HashMap;
 import java.util.Arrays;
+import java.util.Map;
 
 import ca.polymtl.inf8480.tp1.shared.AuthenticationException;
 import ca.polymtl.inf8480.tp1.shared.FileAlreadyExistsException;
@@ -42,7 +43,7 @@ public class Server implements ServerInterface {
 
 	public Server() {
 		super();
-		this.authServerStub = loadAuthServerStub("127.0.0.1"); // TODO passer ladresse du serveur
+		this.authServerStub = loadAuthServerStub("127.0.0.1");
 	}
 
 	private void run() {
@@ -71,18 +72,17 @@ public class Server implements ServerInterface {
 	
 			// Create file containing locks if it does not exist
 			File locksFile = new File(this.SERVER_FILE_PATH + "locks.txt");
-			boolean locksExist = locksFile.createNewFile();
+			boolean locksFileCreated = locksFile.createNewFile();
 	
 			// Retrieve locks if they exist
-			if (locksExist) {
+			if (!locksFileCreated) {
 				BufferedReader bufferedReader = new BufferedReader(new FileReader(locksFile));
 				String lock;
 	
 				while ((lock = bufferedReader.readLine()) != null) {
 					String[] parts = lock.split(" ");
 					String file = parts[0];
-					String user = parts[1];
-					
+					String user = parts.length == 2 ? parts[1] : null;
 					this.locks.put(file, user);
 				}
 	
@@ -117,7 +117,10 @@ public class Server implements ServerInterface {
 		File newFile = new File(this.SERVER_FILE_PATH + name);
 
 		try {
-			if (!newFile.createNewFile()) {
+			if (newFile.createNewFile()) {
+				this.locks.put(name, null);
+			}
+			else {
 				throw new FileAlreadyExistsException("Le fichier " + name + " existe deja");
 			}
 		} catch (IOException e) {
@@ -126,8 +129,42 @@ public class Server implements ServerInterface {
 	}
 
 	@Override
+	public String list(String login, String password) throws AuthenticationException, RemoteException {
+		// Authentify the client
+		this.authentifyUser(login, password);
+
+		String list = "";
+		for (Map.Entry<String, String> entry : this.locks.entrySet()) {
+			list += "* " + entry.getKey();
+			String lockUser = entry.getValue();
+			list += (lockUser == null ? "   non verrouille\n" : "   verrouille par " + lockUser + "\n");
+		}
+		list += this.locks.size() + " fichier(s)";
+		return list;
+	}
+
+	@Override
+	public HashMap<String, byte[]> syncLocalDirectory(String login, String password) throws AuthenticationException, RemoteException {
+		// Authentify the client
+		this.authentifyUser(login, password);
+
+		HashMap<String, byte[]> files = new HashMap<>();
+		try {
+			for (Map.Entry<String, String> entry : this.locks.entrySet()) {
+				String fileName = entry.getKey();
+				byte[] fileContent = Files.readAllBytes(Paths.get(this.SERVER_FILE_PATH + fileName));
+				files.put(fileName, fileContent);
+			}
+		} catch (IOException e) {
+			System.out.println("Erreur: " + e.getMessage());
+		}
+		return files;
+	}
+
+	@Override
 	public byte[] lock(String name, byte[] localChecksum, String login, String password) throws 
 						AuthenticationException, UnknownFileException, FileAlreadyLockedException, RemoteException {
+		// Authentify the client
 		this.authentifyUser(login, password);
 		
 		// Verify if the file exists
@@ -138,7 +175,7 @@ public class Server implements ServerInterface {
 		// Verify if the file is already locked
 		String user = this.locks.get(name);
 		if (user != null) {
-			throw new FileAlreadyLockedException("Le fichier " + name + "est deja verrouille par " + user + ".");
+			throw new FileAlreadyLockedException("Le fichier " + name + " est deja verrouille par " + user + ".");
 		}
 
 		try {
