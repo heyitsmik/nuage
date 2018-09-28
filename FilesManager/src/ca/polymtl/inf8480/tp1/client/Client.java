@@ -23,6 +23,7 @@ import java.util.HashMap;
 
 import ca.polymtl.inf8480.tp1.shared.AuthenticationException;
 import ca.polymtl.inf8480.tp1.shared.FileAlreadyExistsException;
+import ca.polymtl.inf8480.tp1.shared.FileNotLockedException;
 import ca.polymtl.inf8480.tp1.shared.FileAlreadyLockedException;
 import ca.polymtl.inf8480.tp1.shared.UnknownFileException;
 import ca.polymtl.inf8480.tp1.shared.ServerInterface;
@@ -39,24 +40,27 @@ public class Client {
 	private AuthenticationServerInterface authServerStub = null;
 
 	public static void main(String[] args) {
-		String distantHostname = null;
+		String method = null;
+		String parameter = null;
 
 		if (args.length > 0) {
-			distantHostname = args[0];
+			method = args[0];
+			if (args.length > 1 ) {
+				parameter = args[1];
+			}
 		}
 
-		Client client = new Client(distantHostname);
-		client.run();
+		Client client = new Client();
 	}
 
-	public Client(String serverHostname) {
+	public Client() {
 		super();
 
 		if (System.getSecurityManager() == null) {
 			System.setSecurityManager(new SecurityManager());
 		}
 
-		serverHostname = serverHostname != null ? serverHostname : "127.0.0.1";
+		String serverHostname = "127.0.0.1";
 		this.serverStub = loadServerStub(serverHostname);
 		this.authServerStub = loadAuthServerStub(serverHostname);
 	}
@@ -69,8 +73,10 @@ public class Client {
 		authenticateUser();
 
 		if (serverStub != null) {
-			this.syncLocalDirectory();
+			this.push("test");
 		}
+
+
 	}
 
 	private ServerInterface loadServerStub(String hostname) {
@@ -197,23 +203,34 @@ public class Client {
 		}
 	}
 
-	private void get(String fileName) {
-		
+	private void get(String name) {
+		try {
+			// If the file does not exists, checksum = null
+			byte[] localChecksum = new File(this.LOCAL_FILE_PATH + name).exists() ? this.getChecksum(name) : null;
+			byte[] synchronizedFile = this.serverStub.get(name, localChecksum, this.login, this.password);
+
+			// Synchronize the user's file if necessary
+			if (synchronizedFile != null) {
+				this.synchronizeFile(name, synchronizedFile);
+			}
+
+			System.out.println(name + " synchronise");
+		} catch (AuthenticationException | UnknownFileException e) {
+			System.out.println(e.getMessage());
+		} catch (RemoteException e) {
+			System.out.println("Erreur: " + e.getMessage());
+		} 
 	}
 
 	private void lock(String name) {
 		try {
             // If the file does not exists, checksum = null
 			byte[] localChecksum = new File(this.LOCAL_FILE_PATH + name).exists() ? this.getChecksum(name) : null;
-			byte[] upToDateFile = this.serverStub.lock(name, localChecksum, this.login, this.password);
+			byte[] synchronizedFile = this.serverStub.lock(name, localChecksum, this.login, this.password);
 
 			// Update the user's newly locked file with its most recent version
-			if (upToDateFile != null) {
-				File lockedFile = new File(this.LOCAL_FILE_PATH + name);
-				lockedFile.delete(); // TODO check if necessary
-				try (FileOutputStream fos = new FileOutputStream(this.LOCAL_FILE_PATH + name)) {
-					fos.write(upToDateFile);
-				}
+			if (synchronizedFile != null) {
+				this.synchronizeFile(name, synchronizedFile);
 			}
 
 			System.out.println(name + " verouille");
@@ -224,13 +241,40 @@ public class Client {
 		} 
 	}
 
+	private void push(String name) {
+		try {
+			if (!new File(this.LOCAL_FILE_PATH + name).exists()) {
+				System.out.println("Le fichier " + name + " n'existe pas");
+				return;
+			}
+			byte[] fileBytes = Files.readAllBytes(Paths.get(this.LOCAL_FILE_PATH + name));
+			this.serverStub.push(name, fileBytes, this.login, this.password);
+			System.out.println(name + " a été envoyé au serveur");
+		} catch (AuthenticationException | FileNotLockedException | FileAlreadyLockedException e) {
+			System.out.println(e.getMessage());
+		} catch (Exception e) {
+			System.out.println("Erreur: " + e.getMessage());
+		} 
+		
+	}
+
 	private byte[] getChecksum(String fileName) {
 		try {
-			byte[] fileBytes = Files.readAllBytes(Paths.get(LOCAL_FILE_PATH + fileName));
+			byte[] fileBytes = Files.readAllBytes(Paths.get(this.LOCAL_FILE_PATH + fileName));
 			return MessageDigest.getInstance("MD5").digest(fileBytes); 
 		} catch (Exception e) {
 			System.out.println("Erreur: " + e.getMessage());
 			return null;
+		}
+	}
+
+	private void synchronizeFile(String name, byte[] synchronizedFile) {
+		File oldFile = new File(this.LOCAL_FILE_PATH + name);
+		oldFile.delete();
+		try (FileOutputStream fos = new FileOutputStream(this.LOCAL_FILE_PATH + name)) {
+			fos.write(synchronizedFile);
+		} catch (Exception e) {
+			System.out.println("Erreur: " + e.getMessage());
 		}
 	}
 }
