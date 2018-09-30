@@ -6,15 +6,15 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.FileReader;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.InputStreamReader;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.InputStreamReader;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
@@ -22,27 +22,29 @@ import java.util.Map;
 import java.util.HashMap;
 
 import ca.polymtl.inf8480.tp1.shared.AuthenticationException;
+import ca.polymtl.inf8480.tp1.shared.AuthenticationServerInterface;
 import ca.polymtl.inf8480.tp1.shared.FileAlreadyExistsException;
-import ca.polymtl.inf8480.tp1.shared.FileNotLockedException;
 import ca.polymtl.inf8480.tp1.shared.FileAlreadyLockedException;
+import ca.polymtl.inf8480.tp1.shared.FileNotLockedException;
 import ca.polymtl.inf8480.tp1.shared.UnknownFileException;
 import ca.polymtl.inf8480.tp1.shared.ServerInterface;
-import ca.polymtl.inf8480.tp1.shared.AuthenticationServerInterface;
 
 public class Client {
 
-	static final String LOCAL_CREDENTIAL = "local_credential.txt";
-	static final String LOCAL_FILE_PATH = "local_files/";
+	private final String LOCAL_CREDENTIAL = "local_credential.txt";
+	private final String LOCAL_FILE_PATH = "local_files/";
+	private final String SERVER_HOSTNAME = "127.0.0.1";
 
-	private String login = null;
-	private String password = null;
+	private String login;
+	private String password;
 	private ServerInterface serverStub = null;
 	private AuthenticationServerInterface authServerStub = null;
 
 	public static void main(String[] args) {
-		String method = null;
-		String parameter = null;
+		String method = "";
+		String parameter = "";
 
+		// Recuperate the client's command
 		if (args.length > 0) {
 			method = args[0];
 			if (args.length > 1 ) {
@@ -51,6 +53,7 @@ public class Client {
 		}
 
 		Client client = new Client();
+		client.run(method, parameter);
 	}
 
 	public Client() {
@@ -60,34 +63,66 @@ public class Client {
 			System.setSecurityManager(new SecurityManager());
 		}
 
-		String serverHostname = "127.0.0.1";
-		this.serverStub = loadServerStub(serverHostname);
-		this.authServerStub = loadAuthServerStub(serverHostname);
+		this.serverStub = loadServerStub();
+		this.authServerStub = loadAuthServerStub();
 	}
 
-	private void run() {
+	private void run(String method, String parameter) {
 		// Create local files repository if it does not exist
 		File repository = new File(this.LOCAL_FILE_PATH);
 		repository.mkdir();
 		
-		authenticateUser();
-
-		if (serverStub != null) {
-			this.push("test");
+		boolean isAuthenticated = authenticateUser();
+		if (!isAuthenticated) {
+			// Exit the program if the user cannot be authenticated
+			return;
 		}
 
+		// Handle the client's command
+		if (serverStub != null) {
+        
+			switch (method) {
+				case "create" : 
+					this.create(parameter);
+					break;
 
+				case "list" : 
+					this.list();
+					break;
+
+				case "syncLocalDirectory" :
+					this.syncLocalDirectory();
+					break;
+
+				case "get" :
+					this.get(parameter);
+					break;
+
+				case "lock" :
+					this.lock(parameter);
+					break;
+				
+				case "push" :
+					this.push(parameter);
+					break;
+
+				case "" :
+					break;
+				
+				default :
+					System.out.println("Commande invalide");
+			}
+		}
 	}
 
-	private ServerInterface loadServerStub(String hostname) {
+	private ServerInterface loadServerStub() {
 		ServerInterface stub = null;
 
 		try {
-			Registry registry = LocateRegistry.getRegistry(hostname);
+			Registry registry = LocateRegistry.getRegistry(this.SERVER_HOSTNAME);
 			stub = (ServerInterface) registry.lookup("server");
 		} catch (NotBoundException e) {
-			System.out.println("Erreur: Le nom '" + e.getMessage()
-					+ "' n'est pas défini dans le registre.");
+			System.out.println("Erreur: Le nom '" + e.getMessage() + "' n'est pas défini dans le registre.");
 		} catch (AccessException e) {
 			System.out.println("Erreur: " + e.getMessage());
 		} catch (RemoteException e) {
@@ -97,15 +132,14 @@ public class Client {
 		return stub;
 	}
 
-	private AuthenticationServerInterface loadAuthServerStub(String hostname) {
+	private AuthenticationServerInterface loadAuthServerStub() {
 		AuthenticationServerInterface stub = null;
 
 		try {
-			Registry registry = LocateRegistry.getRegistry(hostname);
+			Registry registry = LocateRegistry.getRegistry(this.SERVER_HOSTNAME);
 			stub = (AuthenticationServerInterface) registry.lookup("authentication_server");
 		} catch (NotBoundException e) {
-			System.out.println("Erreur: Le nom '" + e.getMessage()
-					+ "' n'est pas défini dans le registre.");
+			System.out.println("Erreur: Le nom '" + e.getMessage() + "' n'est pas défini dans le registre.");
 		} catch (AccessException e) {
 			System.out.println("Erreur: " + e.getMessage());
 		} catch (RemoteException e) {
@@ -115,27 +149,41 @@ public class Client {
 		return stub;
 	}
 
-	private void authenticateUser() {
+	private boolean authenticateUser() {
 		try {
 			File localCredential = new File(this.LOCAL_FILE_PATH + this.LOCAL_CREDENTIAL);
 
-			if (localCredential.createNewFile()) {
+			// Returns the length, in bytes, of the file denoted by this abstract pathname, or
+			// if the file does not exist
+			if (localCredential.length() == 0) {
+				localCredential.createNewFile();
+
+				// Recuperate the user's new login credentials
 				BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(System.in));
 				
-				System.out.print("Entrez votre nom d'utilisateur: ");
+				System.out.print("Entrez votre nom d'utilisateur (un seul mot): ");
 				this.login = bufferedReader.readLine();
 		
 				System.out.print("Entrez votre mot de passe: ");
 				this.password = bufferedReader.readLine();
 		
 				bufferedReader.close();
+				
+				// Inform the authentication server that a new user has been created
+				boolean createdNewUser = this.authServerStub.newUser(this.login, this.password);
 
-				BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(localCredential, true));
-				bufferedWriter.write(this.login + " " + this.password);
-				bufferedWriter.close();
-
-			    this.authServerStub.newUser(this.login, this.password);
+				if (createdNewUser) {
+					// Add the new credentials to the local file
+					BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(localCredential, true));
+					bufferedWriter.write(this.login + " " + this.password);
+					bufferedWriter.close();
+					return true;
+				} else {
+					System.out.println("Erreur: " + "L'utilisateur \"" + this.login + "\" existe déjà.");
+					return false;
+				}
 			} else {
+				// Retrieve the user's credentials (previously saved in the file)
 				BufferedReader bufferedReader = new BufferedReader(new FileReader(localCredential));
 				String credential = bufferedReader.readLine();
 				bufferedReader.close();
@@ -143,27 +191,26 @@ public class Client {
 				String[] parts = credential.split(" ");
 				this.login = parts[0];
 				this.password = parts[1];
+				return true;
 			}
-
 		} catch (Exception e) {
 			System.err.println("Erreur: " + e.getMessage());
-		}
-	}
-
-	private void newUser(String login, String password) {
-		try {
-			this.authServerStub.newUser(login, password);
-		} catch (RemoteException e) {
-			System.out.println("Erreur: " + e.getMessage());
+			return false;
 		}
 	}
 
 	private void create(String name) {
 		try {
-			this.serverStub.create(name, this.login, this.password);
 			File newFile = new File(this.LOCAL_FILE_PATH + name);
+			if (newFile.exists()) {
+				System.out.println("Opération refusée: Le fichier \"" + name + "\" existe déjà localement.");
+				return;
+			}
+
+			this.serverStub.create(name, this.login, this.password);
+
 			newFile.createNewFile();
-			System.out.println(name + " ajoute."); // TODO accents!
+			System.out.println("\"" + name + "\" ajouté.");
 		} catch (IOException e) {
 			System.out.println("Erreur: " + e.getMessage());
 		} catch (AuthenticationException | FileAlreadyExistsException e) {
@@ -184,21 +231,25 @@ public class Client {
 
 	private void syncLocalDirectory() {
 		try {
+			// Recuperate all files server side
 			HashMap<String, byte[]> syncedFiles = this.serverStub.syncLocalDirectory(this.login, this.password);
+
+			// Update all local files
 			for (Map.Entry<String, byte[]> entry : syncedFiles.entrySet()) {
 				String fileName = entry.getKey();
 				byte[] fileContent = entry.getValue();
+
 				File file = new File(this.LOCAL_FILE_PATH + fileName);
-				file.delete(); // TODO check if necessary
+				file.delete();
+
+				// Write new file content
 				try (FileOutputStream fos = new FileOutputStream(this.LOCAL_FILE_PATH + fileName)) {
 					fos.write(fileContent);
 				}
 			}
-		} catch (RemoteException e) {
-			System.out.println("Erreur: " + e.getMessage());
 		} catch (AuthenticationException e) {
 			System.out.println(e.getMessage());
-		} catch (Exception e) {
+		} catch (IOException e) {
 			System.out.println("Erreur: " + e.getMessage());
 		}
 	}
@@ -214,7 +265,7 @@ public class Client {
 				this.synchronizeFile(name, synchronizedFile);
 			}
 
-			System.out.println(name + " synchronise");
+			System.out.println("\"" + name + "\" synchronisé.");
 		} catch (AuthenticationException | UnknownFileException e) {
 			System.out.println(e.getMessage());
 		} catch (RemoteException e) {
@@ -233,29 +284,32 @@ public class Client {
 				this.synchronizeFile(name, synchronizedFile);
 			}
 
-			System.out.println(name + " verouille");
+			System.out.println("\"" + name + "\" verrouillé.");
 		} catch (AuthenticationException | UnknownFileException | FileAlreadyLockedException e) {
 			System.out.println(e.getMessage());
-		} catch (Exception e) {
+		} catch (IOException e) {
 			System.out.println("Erreur: " + e.getMessage());
 		} 
 	}
 
 	private void push(String name) {
 		try {
+			// Verify if the file exists locally
 			if (!new File(this.LOCAL_FILE_PATH + name).exists()) {
-				System.out.println("Le fichier " + name + " n'existe pas");
+				System.out.println("Opération refusée: Le fichier \"" + name + "\" n'existe pas.");
 				return;
 			}
+
+			// Read the file and send it to the server for update
 			byte[] fileBytes = Files.readAllBytes(Paths.get(this.LOCAL_FILE_PATH + name));
 			this.serverStub.push(name, fileBytes, this.login, this.password);
-			System.out.println(name + " a été envoyé au serveur");
+
+			System.out.println("\"" + name + "\" a été envoyé au serveur.");
 		} catch (AuthenticationException | FileNotLockedException | FileAlreadyLockedException e) {
 			System.out.println(e.getMessage());
-		} catch (Exception e) {
+		} catch (IOException e) {
 			System.out.println("Erreur: " + e.getMessage());
 		} 
-		
 	}
 
 	private byte[] getChecksum(String fileName) {
@@ -269,11 +323,13 @@ public class Client {
 	}
 
 	private void synchronizeFile(String name, byte[] synchronizedFile) {
+		// Delete and replace old file with the new content
 		File oldFile = new File(this.LOCAL_FILE_PATH + name);
 		oldFile.delete();
+
 		try (FileOutputStream fos = new FileOutputStream(this.LOCAL_FILE_PATH + name)) {
 			fos.write(synchronizedFile);
-		} catch (Exception e) {
+		} catch (IOException e) {
 			System.out.println("Erreur: " + e.getMessage());
 		}
 	}
