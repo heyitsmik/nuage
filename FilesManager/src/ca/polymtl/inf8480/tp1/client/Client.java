@@ -44,16 +44,87 @@ public class Client {
 		String method = "";
 		String parameter = "";
 
-		// Recuperate the client's command
+		// ERROR HANDLING
 		if (args.length > 0) {
 			method = args[0];
-			if (args.length > 1 ) {
-				parameter = args[1];
-			}
-		}
 
-		Client client = new Client();
-		client.run(method, parameter);
+			switch (method) {
+				case "create" : 
+					if (args.length == 2) {
+						parameter = args[1];
+						break;
+					} else if (args.length == 1) {
+						System.out.println("Opération refusée: Fichier attendu.");
+						return;
+					} else if (args.length > 1) {
+						System.out.println("Opération refusée: Argument(s) en trop.");
+						return;
+					}
+	
+				case "list" : 
+					if (args.length > 1) {
+						System.out.println("Opération refusée: Argument(s) en trop.");
+						return;
+					} else {
+						break;
+					}
+	
+				case "syncLocalDirectory" :
+					if (args.length > 1) {
+						System.out.println("Opération refusée: Argument(s) en trop.");
+						return;
+					} else {
+						break;
+					}
+	
+				case "get" :
+					if (args.length == 2) {
+						parameter = args[1];
+						break;
+					} else if (args.length == 1) {
+						System.out.println("Opération refusée: Fichier attendu.");
+						return;
+					} else if (args.length > 1) {
+						System.out.println("Opération refusée: Argument(s) en trop.");
+						return;
+					}
+	
+				case "lock" :
+					if (args.length == 2) {
+						parameter = args[1];
+						break;
+					} else if (args.length == 1) {
+						System.out.println("Opération refusée: Fichier attendu.");
+						return;
+					} else if (args.length > 1) {
+						System.out.println("Opération refusée: Argument(s) en trop.");
+						return;
+					}
+				
+				case "push" :
+					if (args.length == 2) {
+						parameter = args[1];
+						break;
+					} else if (args.length == 1) {
+						System.out.println("Opération refusée: Fichier attendu.");
+						return;
+					} else if (args.length > 1) {
+						System.out.println("Opération refusée: Argument(s) en trop.");
+						return;
+					}
+				
+				default :
+					System.out.println("Opération refusée: commande inconnue.");
+					return;
+			}
+
+			Client client = new Client();
+			client.run(method, parameter);
+
+		} else {
+			System.out.println("Opération refusée: aucune commande spécifiée.");
+			return;
+		}
 	}
 
 	public Client() {
@@ -161,11 +232,21 @@ public class Client {
 				// Recuperate the user's new login credentials
 				BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(System.in));
 				
-				System.out.print("Entrez votre nom d'utilisateur (un seul mot): ");
-				this.login = bufferedReader.readLine();
+				System.out.print("Entrez votre nom d'utilisateur (1 mot): ");
+				String[] loginInput = bufferedReader.readLine().split(" ");
+				if (loginInput.length > 1) {
+					System.out.println("Erreur: Le nom d'utilisateur peut seulement être 1 mot.");
+					return false;
+				}
+				this.login = loginInput[0];
 		
-				System.out.print("Entrez votre mot de passe: ");
-				this.password = bufferedReader.readLine();
+				System.out.print("Entrez votre mot de passe (1 mot): ");
+				String[] passwordInput = bufferedReader.readLine().split(" ");
+				if (passwordInput.length > 1) {
+					System.out.println("Erreur: Le mot de passe peut seulement être 1 mot.");
+					return false;
+				}
+				this.password = passwordInput[0];
 		
 				bufferedReader.close();
 				
